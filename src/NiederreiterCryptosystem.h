@@ -13,12 +13,22 @@ class NiederreiterCryptosystem{
 public:
 	NiederreiterCryptosystem(int n, int m, GF2EX g, int delta);
 	mat_GF2 Encrypt(mat_GF2 message);
-	mat_GF2 Decrypt(mat_GF2 received_word);
+	mat_GF2 Decrypt(mat_GF2 received_word, string mode="Patterson");
 	mat_GF2 Signature(mat_GF2 message, string mode);
 	bool Verify(mat_GF2 signature, mat_GF2 message);
 
+	mat_GF2 ScramblerMatrixGen(int k, string mode="random");
+	Mat<ZZ> LargeScramblerMatrixGen(int k, string mode="random");
+	mat_GF2 PermutationMatrixGen(int n, string mode="random");
+	Mat<ZZ> LargePermutationMatrixGen(int n, string mode="random");
+
 	mat_GF2 GetPublicKey(void);
+	mat_GF2 GetP(void);
+	mat_GF2 GetS(void);
 	GoppaCode GetGoppaCode(void);	
+
+	void SetPrngSeed(unsigned int seed);
+	int PrngGen(string mode="LSFR");
 
 private:
 	GoppaCode _GoppaCode;
@@ -28,7 +38,11 @@ private:
 	int _delta;
 	mat_GF2 _S; //Scrambler Matrix
 	mat_GF2 _P; //Permutation Matrix
+	Mat<ZZ> _LargeS;
+	Mat<ZZ> _LargeP;
 	mat_GF2 _PublicKey;
+
+	unsigned long int seed;
 };
 
 #endif

@@ -17,13 +17,23 @@ GoppaCode::GoppaCode(int n, int m, GF2EX g)
 	this->_m = m;
 	this->_g = g;
 
-	/*find primitive root over GF(2^m)*/
-	GF2E primitive_root = _GetGf2eGenerator(m);
-	//cout << "generator: " << primitive_root << endl;
+	/*find primitive root over GF(2^m), [0 0 0 1 0 0 0 1 1 0 1 1 1 0 0 1] by default*/
+	GF2X primitive_root;
+	SetCoeff(primitive_root,3,1);
+	SetCoeff(primitive_root,7,1);
+	SetCoeff(primitive_root,8,1);
+	SetCoeff(primitive_root,10,1);
+	SetCoeff(primitive_root,11,1);
+	SetCoeff(primitive_root,12,1);
+	SetCoeff(primitive_root,15,1);
+	this->_Gf2eGenerator = conv<GF2E>(primitive_root);
+
+	//this->_Gf2eGenerator = _GetGf2eGenerator(m);
+	cout << "generator: " << this->_Gf2eGenerator << endl;
         /*Initialize the code locators*/
         _codelocators.resize(n);
         for (int i = 0; i < n-1; i++)
-                _codelocators[i] = power(primitive_root, conv<ZZ>(i+1));
+                _codelocators[i] = power(this->_Gf2eGenerator, conv<ZZ>(i+1));
         _codelocators[n-1] = GF2E::zero();
         /*for (int i = 0; i < _codelocators.size(); i++)
                 cout << "cl: " << _codelocators[i] << endl;*/
@@ -33,7 +43,6 @@ GoppaCode::GoppaCode(int n, int m, GF2EX g)
 	/*Gamma is a list of the polynomials used to determine membership in the code*/
 	vector<GF2EX> gamma(n); GF2EX inverse;
 	vector<vector<GF2E> > H_check_poly(t, vector<GF2E>(n)); 
-	
 	for (int i = 0; i < n; i++){
 		InvMod(inverse, X-_codelocators[i], g);
 		gamma[i] = MulMod(h,inverse,g);
@@ -48,7 +57,13 @@ GoppaCode::GoppaCode(int n, int m, GF2EX g)
 			//cout << "H_check_poly: " << H_check_poly[j][i]; 		
 		}		
 	}
-	
+
+	_H_Goppa_Poly.SetDims(t, n);
+	for (int i = 0; i < t; i++)
+		for(int j = 0; j < n; j++){
+			_H_Goppa_Poly[i][j] = H_check_poly[i][j];	
+	}
+
 	/*Construct the binary parity-check matrix for the Goppa code.
 	Do so by converting each element of F_2^m to its binary representation*/
 	//vector<vector<GF2> > vec_vec_H_Goppa(m*H_check_poly.size(), vector<GF2>(H_check_poly[0].size()));
@@ -63,13 +78,13 @@ GoppaCode::GoppaCode(int n, int m, GF2EX g)
 				//cout << _H_Goppa[k][j] << " ";			
 			}
 		}
-				
-	//cout << "_H_Goppa " << _H_Goppa << endl;
+
+	//cout << "__Goppa " << _H_Goppa << endl;
 	/*Construct the generator matrix for our code by computinga basis for the null-space of H_Goppa. 
 	The null-space is, by definition, the codewords of our code.*/
-	//mat_GF2 G_Goppa; 
-	kernel(_G_Goppa, transpose(_H_Goppa));
-	gauss(_G_Goppa);
+	mat_GF2 G_Goppa; 
+	//kernel(_G_Goppa, transpose(_H_Goppa));
+	//gauss(_G_Goppa);
 	/*if (_G_Goppa.NumRows() != n-m*deg(g)){
 		cout << "GoppaCode::GoppaCode(): G_Goppa("<< _G_Goppa.NumRows() <<") dimension error." << endl;
 		exit(-1);
@@ -105,11 +120,14 @@ void GoppaCode::_split(GF2EX& p0, GF2EX& p1, const GF2EX p)
 		for (int j = 0; j < this->_m-1; j++)//tmp_sqrt=tmp^{2^{m-1}}
 			tmp = sqr(tmp);	
 		
-		if(i%2==0)			
-			SetCoeff(p0, i/2, tmp);		
-		
-		else
-			SetCoeff(p1, i/2, tmp);		
+		if(i%2==0){
+			SetCoeff(p0, i/2, tmp);
+			
+		}				
+		else{
+			SetCoeff(p1, i/2, tmp);	
+		}
+				
 	}	
 }
 
@@ -131,9 +149,13 @@ void GoppaCode::_lattice_basis_reduce(GF2EX& M, GF2EX& N, const GF2EX s)
 	GF2EX q,r;
 	DivRem(q, r, this->_g, s);
 	a[0] = this->_g - q*s; b[0] = 0 - q;
-	
+
+	if (r == 0){
+			M = s; N =1;			
+			return;
+		}
 	/*If the norm is already small enough, we are done. 
-	Otherwise, intialize the base case of the recursive process.*/
+	Otherwise, intialize the base case of the recursive prfailureocess.*/
 	if (_norm(a[0],b[0]) > power(conv<ZZ>(2),t)){
 		a.push_back(conv<GF2EX>(0)); b.push_back(conv<GF2EX>(0));
 		DivRem(q,r,s,a[0]);
@@ -162,6 +184,80 @@ void GoppaCode::_lattice_basis_reduce(GF2EX& M, GF2EX& N, const GF2EX s)
 	return;	
 }
 
+void GoppaCode::_lattice_basis_reduce_I(GF2EX& sigma, GF2EX& omega, GF2EX A, GF2EX B, const int degree)
+{	
+	// v*B = s mod A, deg(A) > deg(B)
+	vector<GF2EX> s; vector<GF2EX> u; vector<GF2EX> v;
+	s.push_back(A);	s.push_back(B);
+	u.push_back(conv<GF2EX>(1));	u.push_back(conv<GF2EX>(0));
+	v.push_back(conv<GF2EX>(0));	v.push_back(conv<GF2EX>(1));
+	int i = 1;
+	GF2EX q,r;
+	while (deg(s[i]) > degree){
+		i++;
+		s.push_back(conv<GF2EX>(0)); u.push_back(conv<GF2EX>(0)); v.push_back(conv<GF2EX>(0));
+		DivRem(q,r,s[i-2],s[i-1]);
+		s[i] = s[i-2] - q*s[i-1];
+		u[i] = u[i-2] - q*u[i-1];
+		v[i] = v[i-2] - q*v[i-1];
+		/*cout << "s" << i << s[i] << endl;
+		cout << "q" << i << q << endl;
+		cout <<"deg(s) " << deg(s[i]) << endl;*/
+	}
+	sigma = v[i];
+	
+	omega = s[i];
+}
+
+void GoppaCode::_xgcd(GF2EX& S, GF2EX& U, GF2EX& V, GF2EX A, GF2EX B)
+{
+	//Si = Ui*A + Vi*B
+	vector<GF2EX> s; vector<GF2EX> u; vector<GF2EX> v;
+	s.push_back(A);	s.push_back(B);
+	u.push_back(conv<GF2EX>(1));	u.push_back(conv<GF2EX>(0));
+	v.push_back(conv<GF2EX>(0));	v.push_back(conv<GF2EX>(1));
+	int i = 1;
+	GF2EX q,r;
+	GF2EX X; SetX(X); 
+	cout << "S[0]: " << s[0] << endl;
+	cout << "S[1]: " << s[1] << endl;
+	while (!IsZero(s[i])){
+		i++;
+		q = 0;
+		int t = deg(s[i-2]) - deg(s[i-1]);
+		s.push_back(conv<GF2EX>(0)); u.push_back(conv<GF2EX>(0)); v.push_back(conv<GF2EX>(0));
+		DivRem(q,r,s[i-2],s[i-1]);
+		s[i] = s[i-2] + q*s[i-1];
+		u[i] = u[i-2] + q*u[i-1];
+		v[i] = v[i-2] + q*v[i-1];
+		/*GF2E coeff1, coeff2;
+		GF2EX Q;
+		while (t >= 0){	
+			coeff1 = LeadCoeff(s[i-2]);
+			coeff2 = LeadCoeff(s[i-1]);
+			Q = coeff1 * inv(coeff2) * power(X, t);
+			s[i] = s[i-2] + Q*s[i-1];
+			u[i] = u[i-2] + Q*u[i-1];
+			v[i] = v[i-2] + Q*v[i-1];
+			q += Q;  
+			s[i-2] = s[i];
+			u[i-2] = u[i];
+			v[i-2] = v[i];
+			t = deg(s[i-2]) - deg(s[i-1]);	
+		}*/		
+		cout << "i-1: " << i-1 <<endl;
+		cout << "S: " << s[i] << endl;
+		cout << "q: " << q << endl;
+		cout << "V before add: " << v[i-1] << endl; 
+		cout << "V: " << q*v[i-1] << endl;
+	}
+	
+		
+	S = 1;
+	U = u[i-1]/s[i-1];
+	V = v[i-1]/s[i-1];
+}
+
 void GoppaCode::_extended_euclidean(GF2EX& sigma, GF2EX& omega, GF2EX A, GF2EX B, const int degree)
 {	
 	// v*B = s mod A, deg(A) > deg(B)
@@ -178,8 +274,10 @@ void GoppaCode::_extended_euclidean(GF2EX& sigma, GF2EX& omega, GF2EX A, GF2EX B
 		s[i] = s[i-2] - q*s[i-1];
 		u[i] = u[i-2] - q*u[i-1];
 		v[i] = v[i-2] - q*v[i-1];
+		//cout << "degree sigma" << deg(v[i]) << endl;
 	}
 	sigma = v[i];
+	
 	omega = s[i];
 }
 
@@ -208,8 +306,7 @@ void GoppaCode::_extended_euclidean_I(GF2EX& sigma, GF2EX& omega, GF2EX A, GF2EX
 			s[i] = s[i-2] + Q*s[i-1];
 			q += Q;  
 			s[i-2] = s[i];
-			t = deg(s[i-2]) - deg(s[i-1]);				
-				
+			t = deg(s[i-2]) - deg(s[i-1]);								
 		}
 		u[i] = u[i-2] - q*u[i-1];
 		v[i] = v[i-2] - q*v[i-1];
@@ -265,8 +362,7 @@ mat_GF2 GoppaCode::Decode(mat_GF2 word, string mode)
 	int tmp = word.NumCols();
 	for (int i = 0; i < tmp; i++)
 		syndrome_poly += this->_SyndromeCalculator[i]*word[0][i];
-        //cout << "Decode syndrome_poly: " << syndrome_poly << endl;
-	
+        cout << "Decode syndrome_poly: " << syndrome_poly << endl;
 	mat_GF2 error = SyndromeDecode(syndrome_poly,mode);
 	return word+error;
 	
@@ -276,52 +372,69 @@ mat_GF2 GoppaCode::Decode(mat_GF2 word, string mode)
 mat_GF2 GoppaCode::SyndromeDecode(GF2EX syndrome_poly, string mode)
 {	
 	//Unlike Decode(), SyndromeDecode uses the syndrome polynomial as its input, outputs the error pattern.	
-	
+	//cout << "Decode syndrome_poly: " << syndrome_poly << endl;
 	if (mode == "Patterson"){
 		//Compute the syndrome necessary for Patterson’s Algorithm.
 		//Take the necessary square root
 		GF2EX g0,g1; _split(g0,g1,this->_g);	
-		GF2EX sqrt_X = g0*InvMod(g1,this->_g);
+		GF2EX sqrt_X = (g0*InvMod(g1,this->_g))%this->_g;
 		GF2EX T = InvMod(syndrome_poly,this->_g);
+		cout << "INVERSE1: " << T << endl;
+
+		_xgcd(g0, g1, T, this->_g, syndrome_poly);
+		cout << "INVERSE2: " << g1*this->_g+T*syndrome_poly << endl;
+
 		GF2EX T0, T1, X;
 		SetX(X);  _split(T0,T1,T+X);
-	 	GF2EX R; rem(R,sqrt_X*T1,this->_g); R += T0; //R = (T0+ sqrt_X*T1).mod(g);
-	
+	 	GF2EX R; rem(R,T0+sqrt_X*T1,this->_g); //R = (T0+ sqrt_X*T1).mod(g);
+	 	cout << "R(x): " << R << endl;
 		//Perform lattice basis reduction.
 		GF2EX alpha, beta;	
-		_lattice_basis_reduce(alpha,beta,R); 
-		//cout << "R" << R << endl;        
-		//cout << "alpha" << alpha << endl;
-		//cout << "beta" << beta << endl;
-	
+		//using Euclid's alg to calculate alpha, beta.
+		_lattice_basis_reduce_I(beta, alpha, this->_g, R, deg(this->_g)/2);     
+		//cout << "alpha" << alpha*alpha << endl;
+		//cout << "beta" << beta*beta*X << endl;
+		
 		//Construct the error-locator polynomial.
 		GF2EX sigma;
 		sigma = (alpha*alpha) + (beta*beta)*X; 
 		//cout << "sigma" << sigma << endl;
+		sigma = sigma/LeadCoeff(sigma);
+		cout << "norm sigma" << sigma << endl;
 		//For every root of the error polynomial, correct the error induced at the corresponding index.
 		int codelocators_len = _codelocators.size();
 		int sigma_degree = deg(sigma);	
 		mat_GF2 error; error.SetDims(1,codelocators_len);	
 
-		GF2EX X_2m; long e = 1;
-		for (int i = 0; i < this->_m; i++)
-			e = e*2;
-		X_2m = PowerMod(X, e, sigma);
+		GF2EX X_2m; 
+
+		X_2m = X;
+		for (int i = 0; i < this->_m; i++){
+			X_2m = X_2m*X_2m%sigma;
+		}
+			
 		
-		if (X_2m != X){
-			cout << "Decode failure!" << endl;		
-			return error; //Decode failure, do nothing to 'error'.
-	
+		if (!IsZero(X_2m-X)){
+			cout << "Decode failure in Divisibility!" << endl;
+			for (int i = 0; i < codelocators_len; i++)
+				error[0][i] = 1;		
+			return error; //Decode failure, 'error' = all ones.
 		}
 
 		else{
-			for (int i = 0; i < codelocators_len; i++){
-				GF2E tmp = conv<GF2E>(0);
+			for (int i = codelocators_len-1; i >= 0; i--){
+				/*GF2E tmp = conv<GF2E>(0);
 				for(int j = 0; j <= sigma_degree; j++)
 					tmp += power(_codelocators[i], j)*coeff(sigma, j);
-				//cout << "tmp " << tmp << IsZero(tmp) << endl;
+				cout << "tmp1 " << tmp << IsZero(tmp) << endl;*/
+
+				GF2E tmp = coeff(sigma,sigma_degree);
+
+				for(int j = 0; j <= sigma_degree-1; j++){
+					tmp = _codelocators[i]*tmp + coeff(sigma,sigma_degree-j-1);
+				}
 				if (IsZero(tmp))
-					error[0][i] = 1;
+					error[0][i] = 1;									
 			}	
 			return error;
 		}
@@ -329,23 +442,26 @@ mat_GF2 GoppaCode::SyndromeDecode(GF2EX syndrome_poly, string mode)
 
 	else if (mode == "Euclidean"){
 		GF2EX sigma, omega;
-		_extended_euclidean_II(sigma,omega, this->_g,syndrome_poly,deg(this->_g)/2);
+		_extended_euclidean_I(sigma,omega, this->_g,syndrome_poly,deg(this->_g)/2);
 		
 		sigma = sigma/LeadCoeff(sigma);
 		//For every root of the error polynomial,
 		//correct the error induced at the corresponding index.
 		int codelocators_len = _codelocators.size();
 		int sigma_degree = deg(sigma);	
+		
 		mat_GF2 error; error.SetDims(1,codelocators_len);
 		GF2EX X; SetX(X); 
-		GF2EX X_2m; long e = 1;
+		GF2EX X_2m;
+		X_2m = X;
 		for (int i = 0; i < this->_m; i++)
-			e = e*2;
-		X_2m = PowerMod(X, e, sigma);
-		
-		if (X_2m != X){
+			X_2m = X_2m*X_2m;
+
+		if (!IsZero((X_2m-X)%sigma)){
 			cout << "Decode failure!" << endl;		
-			return error; //Decode failure, do nothing to 'error'.
+			for (int i = 0; i < codelocators_len; i++)
+				error[0][i] = 1;		
+			return error; //Decode failure, 'error' = all ones.
 	
 		}
 
@@ -354,8 +470,10 @@ mat_GF2 GoppaCode::SyndromeDecode(GF2EX syndrome_poly, string mode)
 				for(int j = 0; j <= sigma_degree; j++)
 					tmp += power(_codelocators[i], j)*coeff(sigma, j);
 				//cout << "tmp " << tmp << IsZero(tmp) << endl;
-				if (IsZero(tmp))
+				if (IsZero(tmp)){
 					error[0][i] = 1;
+					//cout << "zero point" << endl;
+				}				
 		}	
 		return error;
 	}
@@ -365,6 +483,11 @@ mat_GF2 GoppaCode::SyndromeDecode(GF2EX syndrome_poly, string mode)
 GF2EX GoppaCode::GetGoppaPolynomial(void)
 {
 	return this->_g;
+}
+
+mat_GF2E GoppaCode::GetParityCheckMatrixPoly(void)
+{
+	return this->_H_Goppa_Poly;
 }
 
 mat_GF2 GoppaCode::GetParityCheckMatrix(void)
@@ -385,6 +508,12 @@ vector<GF2E> GoppaCode::GetCodeLocators(void)
 vector<GF2EX> GoppaCode::GetSyndromeCalculator(void)
 {
 	return this->_SyndromeCalculator;
+}
+
+GF2E GoppaCode::GetGf2eGenerator()
+{
+
+	return this->_Gf2eGenerator;
 }
 
 GF2E GoppaCode::_GetGf2eGenerator(int degree)
@@ -434,6 +563,12 @@ GF2E GoppaCode::_GetGf2eGenerator(int degree)
 
 void combination(vector<vector<int> >& out_comb_list, vector<int> in_comb_list, int n, int k)
 {
+        if (n == 0 || k ==0){
+        	cout << "combination: cannot choose zero elements from the set." << endl;
+        	exit(-1);
+        }
+
+
         int tmp1 = 1, tmp2 = 1;
         for (int i = n; i > n-k; i--)
                 tmp1 *= i;
@@ -499,7 +634,6 @@ void integer_factor(vector<int>& out_factor_list, int in_small_integer)
 
 	else{
 		out_factor_list.push_back(in_small_integer);
-
 	}
 }
 
